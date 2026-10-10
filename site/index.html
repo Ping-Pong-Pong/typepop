@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TypePop — What's your personality type? | 3-minute quiz</title>
+<meta name="description" content="Take the free 3-minute TypePop personality quiz (English & 한국어) and discover your 4-letter type. Share your result card with friends!">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+</head>
+<body class="lang-en">
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="index.html">Type<span>Pop</span> 🎭</a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="types.html" data-i18n="nav_types">16 Types</a>
+      <a href="about.html" data-i18n="nav_about">About</a>
+    </nav>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button data-lang="en" class="active">EN</button>
+      <button data-lang="ko">한국어</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-kicker" data-i18n="hero_kicker">🎉 The 3-minute personality quiz</div>
+      <h1 data-i18n="hero_title">What's <span class="hl">your type?</span></h1>
+      <p class="sub" data-i18n="hero_sub">Answer 32 fun questions and discover your 4-letter personality type — then share your result card with friends.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary btn-big" href="quiz.html" data-i18n="cta_start">Find my type 🚀</a>
+        <a class="btn btn-ghost" href="types.html" data-i18n="cta_browse">Browse the 16 types</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 data-i18n="how_title">How it works</h2>
+      <div class="steps mt">
+        <div class="step"><h3 data-i18n="step1_t">1. Answer honestly</h3><p data-i18n="step1_d">32 quick questions. No right or wrong answers — go with your gut.</p></div>
+        <div class="step"><h3 data-i18n="step2_t">2. Get your type</h3><p data-i18n="step2_d">We crunch your answers into one of 16 personality types with playful, shareable results.</p></div>
+        <div class="step"><h3 data-i18n="step3_t">3. Share &amp; compare</h3><p data-i18n="step3_d">Download your result card and send it to the group chat. Settle the debate once and for all.</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 data-i18n="types_title">Meet the 16 types</h2>
+      <p class="lede" data-i18n="types_sub">Every type, one card. Tap any type for the full profile.</p>
+      <div class="type-grid" id="typeGrid"></div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="about.html" data-i18n="nav_about">About</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <p data-i18n="footer_tag">Made for group chats everywhere.</p>
+    <p data-i18n="footer_rights">© 2026 TypePop · For fun &amp; self-reflection — not a clinical instrument.</p>
+  </div>
+</footer>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  function renderGrid() {
+    var grid = document.getElementById('typeGrid');
+    var lang = window.TP.getLang();
+    var types = window.TP_TYPES || [];
+    grid.innerHTML = '';
+    types.forEach(function (tp) {
+      var a = document.createElement('a');
+      a.className = 'type-card';
+      a.href = 'type.html?code=' + tp.code;
+      a.innerHTML = '<div class="code"><span class="type-dot" style="background:' +
+        window.TP.typeColor(tp.code) + '"></span>' + tp.code + '</div>' +
+        '<div class="tname">' + (tp.name[lang] || tp.name.en) + '</div>';
+      grid.appendChild(a);
+    });
+  }
+  renderGrid();
+  window.__onLangChange = renderGrid;
+});
+</script>
+</body>
+</html>
