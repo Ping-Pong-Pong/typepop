@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personality type — TypePop</title>
+<meta name="description" content="TypePop personality type profile: strengths, watch-outs, and famous lookalikes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+</head>
+<body class="lang-en">
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="index.html">Type<span>Pop</span> 🎭</a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="types.html" data-i18n="nav_types">16 Types</a>
+      <a href="about.html" data-i18n="nav_about">About</a>
+    </nav>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button data-lang="en" class="active">EN</button>
+      <button data-lang="ko">한국어</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="type-hero">
+      <div class="result-badge" id="typeBadge">····</div>
+      <div class="result-name" id="typeName"></div>
+      <div class="result-tagline" id="typeTagline"></div>
+    </section>
+    <section class="section">
+      <div class="card">
+        <p id="typeDesc" style="font-size:1.02rem"></p>
+        <h3 class="mt" data-i18n="strengths_t">💪 Strengths</h3>
+        <div class="pill-list" id="typeStrengths"></div>
+        <h3 class="mt" data-i18n="growth_t">🌱 Watch out</h3>
+        <div class="pill-list" id="typeGrowth"></div>
+        <h3 class="mt" id="typeCelebsTitle"></h3>
+        <div class="pill-list" id="typeCelebs"></div>
+        <p class="celeb-note" data-i18n="celebs_note">Community-reported typings — for fun, not facts.</p>
+      </div>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="quiz.html" data-i18n="cta_start">Find my type 🚀</a>
+        <a class="btn btn-ghost" href="types.html" data-i18n="see_all">See all 16 types →</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="about.html" data-i18n="nav_about">About</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <p data-i18n="footer_tag">Made for group chats everywhere.</p>
+    <p data-i18n="footer_rights">© 2026 TypePop · For fun &amp; self-reflection — not a clinical instrument.</p>
+  </div>
+</footer>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  function render() {
+    var m = window.location.search.match(/[?&]code=([A-Za-z]{4})/);
+    var code = m ? m[1].toUpperCase() : null;
+    var tp = code && window.TP.getType(code);
+    var lang = window.TP.getLang();
+    if (!tp) {
+      document.getElementById('typeName').textContent = lang === 'ko' ? '유형을 찾을 수 없어요' : 'Type not found';
+      return;
+    }
+    document.title = code + ' — ' + (tp.name[lang] || tp.name.en) + ' | TypePop';
+    var badge = document.getElementById('typeBadge');
+    badge.textContent = code;
+    badge.style.background = window.TP.typeColor(code);
+    document.getElementById('typeName').textContent = tp.name[lang] || tp.name.en;
+    document.getElementById('typeTagline').textContent = tp.tagline[lang] || tp.tagline.en;
+    document.getElementById('typeDesc').textContent = tp.desc[lang] || tp.desc.en;
+    function pills(id, items, warn) {
+      var el = document.getElementById(id);
+      el.innerHTML = '';
+      items.forEach(function (s) {
+        var sp = document.createElement('span');
+        sp.className = 'pill' + (warn ? ' warn' : '');
+        sp.textContent = s;
+        el.appendChild(sp);
+      });
+    }
+    pills('typeStrengths', tp.strengths[lang] || tp.strengths.en, false);
+    pills('typeGrowth', tp.growth[lang] || tp.growth.en, true);
+    document.getElementById('typeCelebsTitle').textContent = window.TP.t('celebs_t', { code: code });
+    pills('typeCelebs', tp.celebs[lang] || tp.celebs.en, false);
+  }
+  render();
+  window.__onLangChange = render;
+});
+</script>
+</body>
+</html>
