@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your result — TypePop</title>
+<meta name="description" content="Your TypePop personality type result. Download your shareable result card!">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+</head>
+<body class="lang-en">
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="index.html">Type<span>Pop</span> 🎭</a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="types.html" data-i18n="nav_types">16 Types</a>
+      <a href="about.html" data-i18n="nav_about">About</a>
+    </nav>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button data-lang="en" class="active">EN</button>
+      <button data-lang="ko">한국어</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="result-hero">
+      <p style="font-weight:700;color:var(--muted)" data-i18n="your_type">Your type is</p>
+      <div class="result-badge" id="resultBadge">····</div>
+      <div class="result-name" id="resultName"></div>
+      <div class="result-tagline" id="resultTagline"></div>
+    </section>
+
+    <section class="section" id="barsSection">
+      <div class="bars" id="bars"></div>
+    </section>
+
+    <section class="section">
+      <div class="card">
+        <p id="resultDesc" style="font-size:1.02rem"></p>
+        <h3 class="mt" data-i18n="strengths_t">💪 Strengths</h3>
+        <div class="pill-list" id="strengths"></div>
+        <h3 class="mt" data-i18n="growth_t">🌱 Watch out</h3>
+        <div class="pill-list" id="growth"></div>
+        <h3 class="mt" id="celebsTitle"></h3>
+        <div class="pill-list" id="celebs"></div>
+        <p class="celeb-note" data-i18n="celebs_note">Community-reported typings — for fun, not facts.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 data-i18n="share_title">Share your result</h2>
+      <div class="share-card-wrap">
+        <canvas id="shareCanvas" width="1080" height="1080"></canvas>
+      </div>
+      <div class="share-row">
+        <button class="share-btn" id="dlBtn" data-i18n="btn_download">⬇ Download card</button>
+        <button class="share-btn" id="copyBtn" data-i18n="btn_copy">🔗 Copy link</button>
+        <button class="share-btn x" id="xBtn">𝕏</button>
+        <button class="share-btn kakao" id="kakaoBtn" data-i18n="share_kakao">💬 KakaoTalk</button>
+        <button class="share-btn" id="nativeShareBtn" style="display:none">📤</button>
+      </div>
+      <div class="btn-row">
+        <a class="btn btn-ghost" href="quiz.html" data-i18n="retake">↺ Retake the quiz</a>
+        <a class="btn btn-secondary" href="types.html" data-i18n="see_all">See all 16 types →</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="about.html" data-i18n="nav_about">About</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <p data-i18n="footer_tag">Made for group chats everywhere.</p>
+    <p data-i18n="footer_rights">© 2026 TypePop · For fun &amp; self-reflection — not a clinical instrument.</p>
+  </div>
+</footer>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script src="js/result.js"></script>
+</body>
+</html>
