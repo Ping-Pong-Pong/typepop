@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Take the quiz — TypePop</title>
+<meta name="description" content="Answer 32 quick questions to discover your 4-letter personality type.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+</head>
+<body class="lang-en">
+<header class="site-header">
+  <div class="wrap">
+    <a class="logo" href="index.html">Type<span>Pop</span> 🎭</a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav_home">Home</a>
+      <a href="types.html" data-i18n="nav_types">16 Types</a>
+      <a href="about.html" data-i18n="nav_about">About</a>
+    </nav>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button data-lang="en" class="active">EN</button>
+      <button data-lang="ko">한국어</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="quiz-top">
+      <div class="q-count" id="qCount"></div>
+      <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+    <div class="q-card" id="qCard">
+      <div class="q-text" id="qText"></div>
+      <div class="likert" id="likert"></div>
+    </div>
+    <div class="quiz-nav">
+      <button class="link-btn" id="backBtn" data-i18n="btn_back">← Back</button>
+      <button class="link-btn" id="restartBtn" data-i18n="btn_restart">↺ Retake quiz</button>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="flinks">
+      <a href="about.html" data-i18n="nav_about">About</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="contact.html">Contact</a>
+    </div>
+    <p data-i18n="footer_tag">Made for group chats everywhere.</p>
+    <p data-i18n="footer_rights">© 2026 TypePop · For fun &amp; self-reflection — not a clinical instrument.</p>
+  </div>
+</footer>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script src="js/quiz.js"></script>
+</body>
+</html>
