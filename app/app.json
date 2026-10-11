@@ -34,7 +34,10 @@
           "imageWidth": 300,
           "resizeMode": "contain"
         }
-      ]
-    ]
+      ],
+      "expo-font",
+      "expo-router"
+    ],
+    "scheme": "typepop-pals"
   }
 }
