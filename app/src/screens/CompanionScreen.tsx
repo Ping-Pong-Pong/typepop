@@ -1,18 +1,17 @@
 /* TypePop Pals — Companion screen (Expo / React Native)
- * Ports prototype/game.js: the companion idles, wanders, naps and chats.
- * Seven blob types selectable (ENFP Pip, ENFJ Sunny, ENTJ Rex, ENTP Zip,
- * INFJ Milo, INFP Wisp, INTJ Nova); choice persists via AsyncStorage.
- * Procedural animation via react-native-reanimated: breathing idle, blink
- * loop, tap squash-and-stretch, wander wobble, nap Z's, spin. No sprite
- * sheets — pose PNGs + code-driven motion. Structured so Rive .riv files
- * can replace the procedural layer later without rewiring game logic.
+ * Cozy storybook art direction: illustrated room background (day/night),
+ * Nunito typography, terracotta/sage/honey palette, drawn icons, haptics.
+ * Behaviors port prototype/game.js: scheduler, tap reactions, mood bubbles,
+ * feeling check-in, bond meter, day/night. Procedural reanimated motion.
+ * Structured so Rive .riv files can replace the procedural layer later
+ * without rewiring game logic.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   Pressable,
-  TouchableOpacity,
   ScrollView,
   StyleSheet,
   Dimensions,
@@ -31,6 +30,7 @@ import Animated, {
   cancelAnimation,
   runOnJS,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   TYPES,
@@ -48,6 +48,9 @@ import {
   setDailyReminder,
   fireTestNotification,
 } from '../notifications';
+import { palette, font, radius, shadow } from '../theme';
+import { hapticTap, hapticSquash, hapticCelebrate } from '../fx';
+import { logCheckin } from '../storage';
 
 const { width: W, height: H } = Dimensions.get('window');
 const BOND_KEY = 'typepop.bond.v1';
@@ -56,6 +59,9 @@ const NAME_KEY = 'typepop.names.v1';
 const REMIND_KEY = 'typepop.reminder.v1';
 // bond thresholds that trigger a little celebration
 const MILESTONES = [5, 10, 25, 50, 100];
+
+const ROOM_DAY = require('../../assets/backgrounds/room-day.jpg');
+const ROOM_NIGHT = require('../../assets/backgrounds/room-night.jpg');
 
 const POSE_SIZE: Record<PoseName, [number, number]> = {
   idle: [215, 215],
@@ -91,9 +97,7 @@ function ZFloat({ delay, x }: { delay: number; x: number }) {
     transform: [{ translateY: y.value }],
     opacity: o.value,
   }));
-  return (
-    <Animated.Text style={[styles.z, { left: x }, s]}>z</Animated.Text>
-  );
+  return <Animated.Text style={[styles.z, { left: x }, s]}>z</Animated.Text>;
 }
 
 function Spark({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
@@ -137,6 +141,90 @@ function Bubble({ text }: { text: string }) {
   );
 }
 
+/* Drawn heart (two circles + rotated square) — no emoji needed. */
+function HeartIcon({ size = 16, color = palette.terracotta }: { size?: number; color?: string }) {
+  const s = size;
+  return (
+    <View style={{ width: s, height: s }}>
+      <View
+        style={{
+          position: 'absolute', left: 0, top: s * 0.16,
+          width: s * 0.53, height: s * 0.53,
+          borderRadius: s * 0.27, backgroundColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute', right: 0, top: s * 0.16,
+          width: s * 0.53, height: s * 0.53,
+          borderRadius: s * 0.27, backgroundColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute', left: s * 0.135, top: s * 0.3,
+          width: s * 0.73, height: s * 0.73,
+          backgroundColor: color, borderRadius: s * 0.08,
+          transform: [{ rotate: '45deg' }],
+        }}
+      />
+    </View>
+  );
+}
+
+/* Drawn crescent moon: solid disc with a bg-colored bite. */
+function MoonIcon({ size = 15, color = palette.ink, bg = palette.card }: { size?: number; color?: string; bg?: string }) {
+  return (
+    <View style={{ width: size, height: size }}>
+      <View
+        style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }}
+      />
+      <View
+        style={{
+          position: 'absolute', left: size * 0.34, top: -size * 0.12,
+          width: size * 0.92, height: size * 0.92,
+          borderRadius: size * 0.46, backgroundColor: bg,
+        }}
+      />
+    </View>
+  );
+}
+
+function PillButton({
+  onPress,
+  onLongPress,
+  label,
+  night,
+  icon,
+  dotOn,
+}: {
+  onPress: () => void;
+  onLongPress?: () => void;
+  label: string;
+  night: boolean;
+  icon?: React.ReactNode;
+  dotOn?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={600}
+      style={({ pressed }) => [
+        styles.pill,
+        night && styles.pillNight,
+        pressed && styles.pillPressed,
+      ]}
+    >
+      {icon}
+      {dotOn !== undefined && (
+        <View style={[styles.dot, dotOn ? styles.dotOn : styles.dotOff]} />
+      )}
+      <Text style={[styles.pillLabel, night && styles.pillLabelNight]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 /* ---------- main screen ---------- */
 
 export default function CompanionScreen() {
@@ -158,7 +246,7 @@ export default function CompanionScreen() {
   const [nameModal, setNameModal] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const displayName = names[typeKey]?.trim() || type.palName;
-  // daily 8pm reminder; web builds can't schedule, so the bell stays hidden there
+  // daily 8pm reminder; web builds can't schedule, so the pill stays hidden there
   const [reminderOn, setReminderOn] = useState(false);
   const remindRef = useRef(false);
 
@@ -176,6 +264,7 @@ export default function CompanionScreen() {
   const posX = useSharedValue(0);
   const hopY = useSharedValue(0);
   const rot = useSharedValue(0);
+  const nightO = useSharedValue(night ? 1 : 0);
 
   const setPose = (p: PoseName) => {
     poseRef.current = p;
@@ -184,6 +273,7 @@ export default function CompanionScreen() {
 
   const selectType = (key: string) => {
     if (!TYPES[key] || key === typeKey) return;
+    hapticTap();
     setTypeKey(key);
     AsyncStorage.setItem(TYPE_KEY, key).catch(() => {});
     setPose('idle');
@@ -193,10 +283,12 @@ export default function CompanionScreen() {
 
   /* ----- name your pal ----- */
   const openRename = () => {
+    hapticTap();
     setNameDraft(displayName);
     setNameModal(true);
   };
   const saveName = () => {
+    hapticTap();
     const trimmed = nameDraft.trim().slice(0, 16);
     const next = { ...names, [typeKey]: trimmed || type.palName };
     setNames(next);
@@ -213,6 +305,7 @@ export default function CompanionScreen() {
     setDailyReminder(on, palName);
   };
   const toggleReminder = async () => {
+    hapticTap();
     if (remindRef.current) {
       applyReminder(false, displayName);
       showBubble('Reminders off. See you whenever! 💤', 2200);
@@ -220,20 +313,20 @@ export default function CompanionScreen() {
     }
     const ok = await ensureNotificationPermission();
     if (!ok) {
-      showBubble('🔕 Turn notifications on in Settings to get pal reminders.', 3000);
+      showBubble('Turn notifications on in Settings to get pal reminders.', 3000);
       return;
     }
     applyReminder(true, displayName);
-    showBubble(`🔔 ${displayName} will say hi every evening at 8!`, 2600);
+    showBubble(`${displayName} will say hi every evening at 8!`, 2600);
   };
-  // dev affordance: long-press the bell to fire a test notification in 10s
+  // dev affordance: long-press the pill to fire a test notification in 10s
   const testReminder = async () => {
     if (!remindRef.current) {
-      showBubble('Turn reminders on first, then long-press 🔔 to test.', 2600);
+      showBubble('Turn reminders on first, then long-press to test.', 2600);
       return;
     }
     await fireTestNotification(displayName);
-    showBubble('🔔 Test fires in 10 seconds — watch for it!', 2600);
+    showBubble('Test fires in 10 seconds — watch for it!', 2600);
   };
 
   /* ----- bond milestones ----- */
@@ -242,6 +335,7 @@ export default function CompanionScreen() {
     if (!MILESTONES.includes(n)) return;
     const nm = displayName;
     setTimeout(() => {
+      hapticCelebrate();
       spawnSparks(24);
       showBubble(`🎉 Bond ${n}! ${nm} ADORES you!`, 3000);
     }, 2600);
@@ -305,11 +399,15 @@ export default function CompanionScreen() {
     );
   }, [breath]);
 
-  /* ----- clock ----- */
+  /* ----- clock + day/night crossfade ----- */
   useEffect(() => {
     const t = setInterval(() => setNight(isNightNow()), 60000);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    nightO.value = withTiming(night ? 1 : 0, { duration: 1600 });
+  }, [night, nightO]);
+  const nightImgStyle = useAnimatedStyle(() => ({ opacity: nightO.value }));
 
   /* ----- bubble ----- */
   const showBubble = (text: string, ms = 2400) => {
@@ -479,6 +577,7 @@ export default function CompanionScreen() {
   /* ----- interaction ----- */
   const onTapBlob = () => {
     if (busyRef.current) return;
+    hapticSquash();
     bumpBond();
     setPose('happy');
     squashTap();
@@ -493,7 +592,9 @@ export default function CompanionScreen() {
 
   const onCheckin = (mood: MoodKey) => {
     if (busyRef.current) return;
+    hapticSquash();
     bumpBond();
+    logCheckin(mood);
     setPose('happy');
     squashTap();
     hop(2);
@@ -516,86 +617,94 @@ export default function CompanionScreen() {
     ],
   }));
 
+  // ground shadow: travels with the blob, widens as it squashes,
+  // shrinks + fades as it hops
+  const shadowAnim = useAnimatedStyle(() => {
+    const lift = Math.max(0, -hopY.value);
+    return {
+      transform: [
+        { translateX: posX.value },
+        { scaleX: tapSX.value * (1 + lift / 520) },
+        { scaleY: Math.max(0.4, tapSY.value * (1 - lift / 1000)) },
+      ],
+      opacity: 0.3 - Math.min(0.19, lift / 480),
+    };
+  });
+
   const [pw, ph] = POSE_SIZE[pose];
-  const hearts =
-    bond >= 5 ? '💛💛💛' : bond >= 2 ? '💛💛🤍' : '💛🤍🤍';
+  const shadowW = pose === 'nap' ? 175 : 148;
+  const bondPct = Math.min(100, bond);
 
   return (
     <View style={styles.root}>
-      {/* room */}
-      <View style={styles.floor} />
-      <View style={styles.baseboard} />
-      <View style={styles.rugOuter} />
-      <View style={styles.rugInner} />
-
-      {/* window */}
-      <View style={styles.windowFrame}>
-        <View
-          style={[
-            styles.windowSky,
-            { backgroundColor: night ? '#2B3A67' : '#AEE3F5' },
-          ]}
-        >
-          {night ? (
-            <>
-              <View style={[styles.star, { left: 20, top: 30 }]} />
-              <View style={[styles.star, { left: 80, top: 50 }]} />
-              <View style={[styles.star, { left: 50, top: 100 }]} />
-            </>
-          ) : (
-            <View style={styles.sun} />
-          )}
-        </View>
-        <View style={styles.windowBarV} />
-        <View style={styles.windowBarH} />
-      </View>
-
-      {/* couch */}
-      <View style={styles.couch} />
-      <View style={styles.couchBack} />
-      <View style={styles.cushion} />
-
-      {/* plant */}
-      <View style={styles.pot} />
-      <View style={styles.leaf1} />
-      <View style={styles.leaf2} />
-      <View style={styles.leaf3} />
+      {/* illustrated room, day/night crossfade */}
+      <Image source={ROOM_DAY} style={styles.roomImage} resizeMode="cover" />
+      <Animated.Image
+        source={ROOM_NIGHT}
+        style={[styles.roomImage, nightImgStyle]}
+        resizeMode="cover"
+      />
+      <LinearGradient
+        colors={
+          night
+            ? ['rgba(18,24,46,0.6)', 'rgba(18,24,46,0)']
+            : ['rgba(255,248,236,0.6)', 'rgba(255,248,236,0)']
+        }
+        style={styles.topScrim}
+        pointerEvents="none"
+      />
 
       {/* header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>🎭 TypePop Pals</Text>
-          <View style={styles.nameRow}>
-            <Text style={styles.bond}>
-              {hearts}  {displayName} · {type.name}
+        <View style={styles.headerLeft}>
+          <Text style={[styles.wordmark, night && styles.wordmarkNight]}>
+            TYPEPOP PALS
+          </Text>
+          <Pressable onPress={openRename} hitSlop={10} style={styles.nameRow}>
+            <Text style={[styles.palName, night && styles.palNameNight]}>
+              {displayName}
             </Text>
-            <TouchableOpacity onPress={openRename} style={styles.renameBtn}>
-              <Text style={styles.renameText}>✏️</Text>
-            </TouchableOpacity>
+            <Text style={[styles.renameGlyph, night && styles.renameGlyphNight]}>
+              ✎
+            </Text>
+          </Pressable>
+          <Text style={[styles.typeLine, night && styles.typeLineNight]}>
+            {type.nickname} · {type.name}
+          </Text>
+          <View style={styles.bondRow}>
+            <HeartIcon size={15} color={palette.terracotta} />
+            <View style={styles.bondTrack}>
+              <View style={[styles.bondFill, { width: `${bondPct}%` }]} />
+            </View>
+            <Text style={[styles.bondNum, night && styles.bondNumNight]}>
+              {bond}
+            </Text>
           </View>
         </View>
         <View style={styles.headerRight}>
-          <Text style={styles.clock}>{night ? '🌙' : '☀️'}</Text>
-          {Platform.OS !== 'web' && (
-            <TouchableOpacity
-              style={styles.napBtn}
-              onPress={toggleReminder}
-              onLongPress={testReminder}
-              delayLongPress={600}
-            >
-              <Text style={styles.napBtnText}>
-                {reminderOn ? '🔔 on' : '🔕 off'}
-              </Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.napBtn}
+          <PillButton
+            label="Nap"
+            night={night}
             onPress={() => {
               if (!busyRef.current) doNap();
             }}
-          >
-            <Text style={styles.napBtnText}>😴 nap</Text>
-          </TouchableOpacity>
+            icon={
+              <MoonIcon
+                size={14}
+                color={night ? palette.cream : palette.ink}
+                bg={night ? 'rgba(38,44,72,0.92)' : palette.card}
+              />
+            }
+          />
+          {Platform.OS !== 'web' && (
+            <PillButton
+              label={reminderOn ? 'Reminders on' : 'Reminders'}
+              night={night}
+              dotOn={reminderOn}
+              onPress={toggleReminder}
+              onLongPress={testReminder}
+            />
+          )}
         </View>
       </View>
 
@@ -609,12 +718,13 @@ export default function CompanionScreen() {
           {READY_TYPES.map((t) => {
             const active = t.key === typeKey;
             return (
-              <TouchableOpacity
+              <Pressable
                 key={t.key}
-                style={[
+                style={({ pressed }) => [
                   styles.typeChip,
                   { borderColor: t.color },
-                  active && { backgroundColor: t.color },
+                  active && { backgroundColor: t.color, borderColor: t.color },
+                  pressed && !active && styles.typeChipPressed,
                 ]}
                 onPress={() => selectType(t.key)}
               >
@@ -623,7 +733,7 @@ export default function CompanionScreen() {
                 >
                   {t.name}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             );
           })}
         </ScrollView>
@@ -636,7 +746,7 @@ export default function CompanionScreen() {
         </View>
       )}
 
-      {/* Pip */}
+      {/* pal */}
       <View style={styles.blobSlot}>
         {napping && (
           <>
@@ -645,6 +755,13 @@ export default function CompanionScreen() {
             <ZFloat delay={1800} x={210} />
           </>
         )}
+        <Animated.View
+          style={[
+            styles.groundShadow,
+            { width: shadowW, bottom: ph * 0.13 },
+            shadowAnim,
+          ]}
+        />
         <Pressable onPress={onTapBlob}>
           <Animated.View style={blobAnim}>
             <Animated.Image
@@ -655,31 +772,26 @@ export default function CompanionScreen() {
           </Animated.View>
         </Pressable>
         {sparks.map((sp) => (
-          <Spark
-            key={sp.id}
-            x={100}
-            y={60}
-            onDone={() => clearSpark(sp.id)}
-          />
+          <Spark key={sp.id} x={100} y={60} onDone={() => clearSpark(sp.id)} />
         ))}
       </View>
 
-      {/* night tint */}
-      {night && <View style={styles.nightTint} pointerEvents="none" />}
-
       {/* feeling check-in */}
-      <View style={styles.checkin}>
+      <View style={[styles.checkinCard, shadow.lift]}>
         <Text style={styles.checkinTitle}>How are you feeling?</Text>
         <View style={styles.moodRow}>
           {MOODS.map((m) => (
-            <TouchableOpacity
+            <Pressable
               key={m.key}
-              style={styles.moodBtn}
+              style={({ pressed }) => [
+                styles.moodBtn,
+                pressed && styles.moodBtnPressed,
+              ]}
               onPress={() => onCheckin(m.key)}
             >
               <Text style={styles.moodIcon}>{m.icon}</Text>
               <Text style={styles.moodLabel}>{m.label}</Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </View>
       </View>
@@ -692,10 +804,8 @@ export default function CompanionScreen() {
         onRequestClose={() => setNameModal(false)}
       >
         <View style={styles.modalShade}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              Name your {type.name} pal 💛
-            </Text>
+          <View style={[styles.modalCard, shadow.lift]}>
+            <Text style={styles.modalTitle}>Name your {type.name} pal</Text>
             <TextInput
               style={styles.nameInput}
               value={nameDraft}
@@ -703,20 +813,26 @@ export default function CompanionScreen() {
               maxLength={16}
               autoFocus
               placeholder={type.palName}
-              placeholderTextColor="#B8A88F"
+              placeholderTextColor={palette.inkSoft}
               returnKeyType="done"
               onSubmitEditing={saveName}
             />
             <View style={styles.modalRow}>
-              <TouchableOpacity
+              <Pressable
                 style={styles.modalCancel}
                 onPress={() => setNameModal(false)}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSave} onPress={saveName}>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.modalSave,
+                  pressed && styles.modalSavePressed,
+                ]}
+                onPress={saveName}
+              >
                 <Text style={styles.modalSaveText}>Save</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -726,194 +842,150 @@ export default function CompanionScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFF3E4' },
-  floor: {
+  root: { flex: 1, backgroundColor: palette.cream },
+  roomImage: {
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 0,
     bottom: 0,
-    height: 170,
-    backgroundColor: '#E8C39A',
+    width: '100%',
+    height: '100%',
   },
-  baseboard: {
+  topScrim: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 170,
-    height: 10,
-    backgroundColor: '#D9A86C',
+    top: 0,
+    height: 210,
   },
-  rugOuter: {
-    position: 'absolute',
-    bottom: 62,
-    alignSelf: 'center',
-    width: 300,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: '#FFD93D',
-  },
-  rugInner: {
-    position: 'absolute',
-    bottom: 73,
-    alignSelf: 'center',
-    width: 240,
-    height: 62,
-    borderRadius: 31,
-    backgroundColor: '#FF6B6B',
-  },
-  windowFrame: {
-    position: 'absolute',
-    top: 90,
-    right: 40,
-    width: 140,
-    height: 150,
-    borderRadius: 10,
-    backgroundColor: '#8A5A3B',
-    padding: 10,
-  },
-  windowSky: { flex: 1, borderRadius: 6, overflow: 'hidden' },
-  windowBarV: {
-    position: 'absolute',
-    left: 70,
-    top: 10,
-    bottom: 10,
-    width: 6,
-    backgroundColor: '#8A5A3B',
-  },
-  windowBarH: {
-    position: 'absolute',
-    top: 75,
-    left: 10,
-    right: 10,
-    height: 6,
-    backgroundColor: '#8A5A3B',
-  },
-  star: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FFF6C9',
-  },
-  sun: {
-    position: 'absolute',
-    right: 14,
-    top: 14,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFF6C9',
-  },
-  couch: {
-    position: 'absolute',
-    left: 36,
-    bottom: 170,
-    width: 130,
-    height: 110,
-    borderRadius: 18,
-    backgroundColor: '#7C5CFF',
-  },
-  couchBack: {
-    position: 'absolute',
-    left: 36,
-    bottom: 260,
-    width: 130,
-    height: 44,
-    borderRadius: 16,
-    backgroundColor: '#6547E0',
-  },
-  cushion: {
-    position: 'absolute',
-    left: 52,
-    bottom: 184,
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#FFD93D',
-  },
-  pot: {
-    position: 'absolute',
-    right: 48,
-    bottom: 170,
-    width: 48,
-    height: 44,
-    borderRadius: 8,
-    backgroundColor: '#C46A4A',
-  },
-  leaf1: {
-    position: 'absolute',
-    right: 62,
-    bottom: 200,
-    width: 26,
-    height: 70,
-    borderRadius: 13,
-    backgroundColor: '#4ADE80',
-  },
-  leaf2: {
-    position: 'absolute',
-    right: 84,
-    bottom: 214,
-    width: 22,
-    height: 52,
-    borderRadius: 11,
-    backgroundColor: '#4ADE80',
-  },
-  leaf3: {
-    position: 'absolute',
-    right: 40,
-    bottom: 214,
-    width: 22,
-    height: 52,
-    borderRadius: 11,
-    backgroundColor: '#4ADE80',
-  },
+
+  /* header */
   header: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: 56,
-    paddingHorizontal: 16,
+    paddingTop: 54,
+    paddingHorizontal: 18,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     zIndex: 10,
   },
-  title: { fontSize: 20, fontWeight: 'bold', color: '#2B2B3A' },
-  bond: { fontSize: 16, color: '#6B6B80', marginTop: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center' },
-  renameBtn: { marginLeft: 6, padding: 4 },
-  renameText: { fontSize: 15 },
-  headerRight: { alignItems: 'flex-end' },
-  clock: { fontSize: 20 },
+  headerLeft: { flex: 1 },
+  wordmark: {
+    fontFamily: font.black,
+    fontSize: 11,
+    letterSpacing: 3,
+    color: palette.inkSoft,
+  },
+  wordmarkNight: { color: 'rgba(255,246,233,0.75)' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  palName: {
+    fontFamily: font.black,
+    fontSize: 30,
+    color: palette.ink,
+    letterSpacing: 0.3,
+  },
+  palNameNight: { color: palette.cream },
+  renameGlyph: {
+    fontSize: 15,
+    color: palette.inkSoft,
+    marginLeft: 7,
+    marginTop: 6,
+  },
+  renameGlyphNight: { color: 'rgba(255,246,233,0.7)' },
+  typeLine: {
+    fontFamily: font.medium,
+    fontSize: 13,
+    color: palette.inkSoft,
+    marginTop: 1,
+  },
+  typeLineNight: { color: 'rgba(255,246,233,0.75)' },
+  bondRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  bondTrack: {
+    width: 104,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(74,59,46,0.16)',
+    marginHorizontal: 8,
+    overflow: 'hidden',
+  },
+  bondFill: {
+    height: '100%',
+    borderRadius: 5,
+    backgroundColor: palette.terracotta,
+  },
+  bondNum: {
+    fontFamily: font.bold,
+    fontSize: 13,
+    color: palette.inkSoft,
+  },
+  bondNumNight: { color: 'rgba(255,246,233,0.8)' },
+  headerRight: { alignItems: 'flex-end', paddingTop: 20 },
+
+  /* pills */
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: palette.card,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: palette.line,
+    ...shadow.soft,
+  },
+  pillNight: {
+    backgroundColor: 'rgba(38,44,72,0.92)',
+    borderColor: 'rgba(255,246,233,0.22)',
+  },
+  pillPressed: { opacity: 0.75, transform: [{ scale: 0.96 }] },
+  pillLabel: {
+    fontFamily: font.bold,
+    fontSize: 14,
+    color: palette.ink,
+    marginLeft: 7,
+  },
+  pillLabelNight: { color: palette.cream },
+  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 1 },
+  dotOn: { backgroundColor: palette.sage },
+  dotOff: { backgroundColor: '#C9BBA6' },
+
+  /* type chips */
   typeRow: {
     position: 'absolute',
-    top: 128,
+    top: 196,
     left: 0,
     right: 0,
     zIndex: 10,
   },
-  typeScroll: { paddingHorizontal: 16, gap: 8 },
+  typeScroll: { paddingHorizontal: 18, gap: 8 },
   typeChip: {
     borderWidth: 2,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    marginRight: 8,
-  },
-  typeChipText: { fontSize: 14, fontWeight: 'bold', color: '#2B2B3A' },
-  typeChipTextActive: { color: '#FFFFFF' },
-  napBtn: {
-    marginTop: 6,
-    backgroundColor: '#FFF8F0',
-    borderRadius: 14,
-    paddingHorizontal: 12,
+    borderRadius: radius.chip,
+    paddingHorizontal: 13,
     paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: '#F0E6D8',
+    backgroundColor: 'rgba(255,253,247,0.94)',
+    marginRight: 8,
+    ...shadow.soft,
   },
-  napBtnText: { fontSize: 15, color: '#6B6B80' },
+  typeChipPressed: { opacity: 0.7 },
+  typeChipText: {
+    fontFamily: font.bold,
+    fontSize: 13,
+    color: palette.ink,
+    letterSpacing: 0.5,
+  },
+  typeChipTextActive: { color: '#FFFFFF' },
+
+  /* bubble */
   bubbleSlot: {
     position: 'absolute',
     bottom: H * 0.52,
@@ -923,41 +995,57 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   bubble: {
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#F0E6D8',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    maxWidth: 280,
+    backgroundColor: palette.card,
+    borderRadius: radius.bubble,
+    borderWidth: 1.5,
+    borderColor: palette.line,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    maxWidth: 290,
+    ...shadow.lift,
   },
-  bubbleText: { fontSize: 17, color: '#2B2B3A', textAlign: 'center' },
+  bubbleText: {
+    fontFamily: font.medium,
+    fontSize: 16,
+    lineHeight: 22,
+    color: palette.ink,
+    textAlign: 'center',
+  },
   bubbleTail: {
     position: 'absolute',
-    bottom: -9,
+    bottom: -8,
     alignSelf: 'center',
-    width: 18,
-    height: 18,
-    backgroundColor: '#fff',
+    width: 16,
+    height: 16,
+    backgroundColor: palette.card,
     transform: [{ rotate: '45deg' }],
-    borderRightWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: '#F0E6D8',
+    borderRightWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: palette.line,
   },
+
+  /* pal */
   blobSlot: {
     position: 'absolute',
-    bottom: 200,
+    bottom: H * 0.27,
     left: 0,
     right: 0,
     alignItems: 'center',
     zIndex: 5,
   },
+  groundShadow: {
+    position: 'absolute',
+    alignSelf: 'center',
+    height: 26,
+    borderRadius: 999,
+    backgroundColor: 'rgba(74,59,46,0.55)',
+  },
   z: {
     position: 'absolute',
-    bottom: 190,
+    bottom: 195,
+    fontFamily: font.black,
     fontSize: 26,
-    fontWeight: 'bold',
-    color: '#8A7FB8',
+    color: '#9AA3C7',
     zIndex: 6,
   },
   spark: {
@@ -965,48 +1053,62 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#FFD93D',
+    backgroundColor: palette.honey,
     borderWidth: 2,
     borderColor: '#FFF',
     zIndex: 30,
   },
-  nightTint: {
+
+  /* check-in card */
+  checkinCard: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#1B2340',
-    opacity: 0.28,
-    zIndex: 40,
-  },
-  checkin: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 130,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    paddingTop: 10,
+    left: 16,
+    right: 16,
+    bottom: 26,
+    backgroundColor: palette.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: palette.line,
+    paddingTop: 14,
+    paddingBottom: 16,
     zIndex: 50,
   },
   checkinTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2B2B3A',
+    fontFamily: font.bold,
+    fontSize: 15,
+    color: palette.ink,
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
   moodRow: {
     flexDirection: 'row',
     justifyContent: 'space-evenly',
-    marginTop: 10,
+    marginTop: 12,
+    paddingHorizontal: 8,
   },
-  moodBtn: { alignItems: 'center', width: 70 },
-  moodIcon: { fontSize: 30 },
-  moodLabel: { fontSize: 12, color: '#6B6B80', marginTop: 2 },
+  moodBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 68,
+    height: 76,
+    borderRadius: 20,
+    backgroundColor: palette.cream,
+    borderWidth: 1,
+    borderColor: palette.line,
+  },
+  moodBtnPressed: { opacity: 0.7, transform: [{ scale: 0.94 }] },
+  moodIcon: { fontSize: 28 },
+  moodLabel: {
+    fontFamily: font.medium,
+    fontSize: 11,
+    color: palette.inkSoft,
+    marginTop: 3,
+  },
+
+  /* rename modal */
   modalShade: {
     flex: 1,
-    backgroundColor: 'rgba(43,43,58,0.45)',
+    backgroundColor: 'rgba(43,35,26,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
@@ -1014,27 +1116,28 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 340,
-    backgroundColor: '#FFFDF8',
-    borderRadius: 18,
-    padding: 20,
-    borderWidth: 2,
-    borderColor: '#F0E6D8',
+    backgroundColor: palette.card,
+    borderRadius: radius.card,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: palette.line,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2B2B3A',
+    fontFamily: font.black,
+    fontSize: 19,
+    color: palette.ink,
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   nameInput: {
     borderWidth: 2,
-    borderColor: '#E8D9C0',
-    borderRadius: 12,
+    borderColor: palette.line,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
+    fontFamily: font.bold,
     fontSize: 18,
-    color: '#2B2B3A',
+    color: palette.ink,
     backgroundColor: '#FFF',
     textAlign: 'center',
   },
@@ -1042,19 +1145,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    marginTop: 14,
+    marginTop: 16,
   },
   modalCancel: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
   },
-  modalCancelText: { fontSize: 16, color: '#6B6B80' },
+  modalCancelText: {
+    fontFamily: font.bold,
+    fontSize: 16,
+    color: palette.inkSoft,
+  },
   modalSave: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 14,
+    backgroundColor: palette.terracotta,
+    ...shadow.soft,
   },
-  modalSaveText: { fontSize: 16, fontWeight: 'bold', color: '#FFF' },
+  modalSavePressed: { opacity: 0.8 },
+  modalSaveText: {
+    fontFamily: font.bold,
+    fontSize: 16,
+    color: '#FFF',
+  },
 });
