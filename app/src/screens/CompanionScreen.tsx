@@ -1,5 +1,7 @@
 /* TypePop Pals — Companion screen (Expo / React Native)
- * Ports prototype/game.js: ENFP blob "Pip" idles, wanders, naps and chats.
+ * Ports prototype/game.js: the companion idles, wanders, naps and chats.
+ * Seven blob types selectable (ENFP Pip, ENFJ Sunny, ENTJ Rex, ENTP Zip,
+ * INFJ Milo, INFP Wisp, INTJ Nova); choice persists via AsyncStorage.
  * Procedural animation via react-native-reanimated: breathing idle, blink
  * loop, tap squash-and-stretch, wander wobble, nap Z's, spin. No sprite
  * sheets — pose PNGs + code-driven motion. Structured so Rive .riv files
@@ -11,6 +13,7 @@ import {
   Text,
   Pressable,
   TouchableOpacity,
+  ScrollView,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -28,6 +31,7 @@ import Animated, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   TYPES,
+  READY_TYPES,
   MOODS,
   pick,
   rand,
@@ -38,6 +42,7 @@ import {
 
 const { width: W, height: H } = Dimensions.get('window');
 const BOND_KEY = 'typepop.bond.v1';
+const TYPE_KEY = 'typepop.type.v1';
 
 const POSE_SIZE: Record<PoseName, [number, number]> = {
   idle: [215, 215],
@@ -122,7 +127,12 @@ function Bubble({ text }: { text: string }) {
 /* ---------- main screen ---------- */
 
 export default function CompanionScreen() {
-  const type = TYPES.enfp; // TODO: type select once more pose sets land
+  const [typeKey, setTypeKey] = useState('enfp');
+  const type = TYPES[typeKey] ?? TYPES.enfp;
+  // behaviors run from long-lived scheduler closures; read the type via ref
+  // so switching companions updates one-liners without restarting timers.
+  const typeRef = useRef(type);
+  typeRef.current = type;
 
   const [pose, setPoseState] = useState<PoseName>('idle');
   const [bubble, setBubble] = useState<{ id: number; text: string } | null>(null);
@@ -151,6 +161,14 @@ export default function CompanionScreen() {
     setPoseState(p);
   };
 
+  const selectType = (key: string) => {
+    if (!TYPES[key] || key === typeKey) return;
+    setTypeKey(key);
+    AsyncStorage.setItem(TYPE_KEY, key).catch(() => {});
+    setPose('idle');
+    showBubble(`Say hi to ${TYPES[key].palName}!`, 2000);
+  };
+
   /* ----- persistence ----- */
   useEffect(() => {
     AsyncStorage.getItem(BOND_KEY).then((v) => {
@@ -159,6 +177,9 @@ export default function CompanionScreen() {
         bondRef.current = n;
         setBond(n);
       }
+    });
+    AsyncStorage.getItem(TYPE_KEY).then((v) => {
+      if (v && TYPES[v]) setTypeKey(v);
     });
   }, []);
   const bumpBond = () => {
@@ -243,7 +264,7 @@ export default function CompanionScreen() {
     setSparks((s) => s.filter((sp) => sp.id !== id));
 
   /* ----- behaviors (mirror game.js weights) ----- */
-  const doTalk = () => showBubble(pick(type.oneLiners), 2600);
+  const doTalk = () => showBubble(pick(typeRef.current.oneLiners), 2600);
 
   const doWanderTo = (targetX: number, then?: () => void, label?: string) => {
     busyRef.current = true;
@@ -361,7 +382,10 @@ export default function CompanionScreen() {
       if (!busyRef.current && poseRef.current === 'happy') setPose('idle');
     }, 700);
     if (bondRef.current === 5) {
-      setTimeout(() => showBubble('Pip likes you! Bond level up! 💛', 2600), 2600);
+      setTimeout(
+        () => showBubble(`${type.palName} likes you! Bond level up! 💛`, 2600),
+        2600,
+      );
     }
   };
 
@@ -439,7 +463,7 @@ export default function CompanionScreen() {
         <View>
           <Text style={styles.title}>🎭 TypePop Pals</Text>
           <Text style={styles.bond}>
-            {hearts}  Pip · {type.name}
+            {hearts}  {type.palName} · {type.name}
           </Text>
         </View>
         <View style={styles.headerRight}>
@@ -453,6 +477,36 @@ export default function CompanionScreen() {
             <Text style={styles.napBtnText}>😴 nap</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* type selector */}
+      <View style={styles.typeRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.typeScroll}
+        >
+          {READY_TYPES.map((t) => {
+            const active = t.key === typeKey;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[
+                  styles.typeChip,
+                  { borderColor: t.color },
+                  active && { backgroundColor: t.color },
+                ]}
+                onPress={() => selectType(t.key)}
+              >
+                <Text
+                  style={[styles.typeChipText, active && styles.typeChipTextActive]}
+                >
+                  {t.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* mood bubble */}
@@ -671,6 +725,24 @@ const styles = StyleSheet.create({
   bond: { fontSize: 16, color: '#6B6B80', marginTop: 4 },
   headerRight: { alignItems: 'flex-end' },
   clock: { fontSize: 20 },
+  typeRow: {
+    position: 'absolute',
+    top: 128,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  typeScroll: { paddingHorizontal: 16, gap: 8 },
+  typeChip: {
+    borderWidth: 2,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    marginRight: 8,
+  },
+  typeChipText: { fontSize: 14, fontWeight: 'bold', color: '#2B2B3A' },
+  typeChipTextActive: { color: '#FFFFFF' },
   napBtn: {
     marginTop: 6,
     backgroundColor: '#FFF8F0',
