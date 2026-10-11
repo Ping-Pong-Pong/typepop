@@ -227,7 +227,7 @@ function PillButton({
 
 /* ---------- main screen ---------- */
 
-export default function CompanionScreen() {
+export default function CompanionScreen({ initialType }: { initialType?: string }) {
   const [typeKey, setTypeKey] = useState('enfp');
   const type = TYPES[typeKey] ?? TYPES.enfp;
   // behaviors run from long-lived scheduler closures; read the type via ref
@@ -370,7 +370,15 @@ export default function CompanionScreen() {
       }
     });
     AsyncStorage.getItem(TYPE_KEY).then((v) => {
-      if (v && TYPES[v]) setTypeKey(v);
+      // `?type=` deep-link (web) wins over the stored type; invalid keys ignored
+      const fromLink =
+        initialType && TYPES[initialType] ? initialType : null;
+      const stored = v && TYPES[v] ? v : null;
+      const key = fromLink ?? stored;
+      if (key) {
+        setTypeKey(key);
+        if (fromLink) AsyncStorage.setItem(TYPE_KEY, key).catch(() => {});
+      }
     });
     AsyncStorage.getItem(NAME_KEY).then((v) => {
       if (v) {
