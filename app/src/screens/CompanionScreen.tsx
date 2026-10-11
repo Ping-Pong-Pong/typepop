@@ -18,6 +18,7 @@ import {
   Dimensions,
   Modal,
   TextInput,
+  Platform,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -41,11 +42,18 @@ import {
   PoseName,
   MoodKey,
 } from '../types';
+import {
+  initNotifications,
+  ensureNotificationPermission,
+  setDailyReminder,
+  fireTestNotification,
+} from '../notifications';
 
 const { width: W, height: H } = Dimensions.get('window');
 const BOND_KEY = 'typepop.bond.v1';
 const TYPE_KEY = 'typepop.type.v1';
 const NAME_KEY = 'typepop.names.v1';
+const REMIND_KEY = 'typepop.reminder.v1';
 // bond thresholds that trigger a little celebration
 const MILESTONES = [5, 10, 25, 50, 100];
 
@@ -150,6 +158,9 @@ export default function CompanionScreen() {
   const [nameModal, setNameModal] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const displayName = names[typeKey]?.trim() || type.palName;
+  // daily 8pm reminder; web builds can't schedule, so the bell stays hidden there
+  const [reminderOn, setReminderOn] = useState(false);
+  const remindRef = useRef(false);
 
   const poseRef = useRef<PoseName>('idle');
   const busyRef = useRef(false);
@@ -194,6 +205,37 @@ export default function CompanionScreen() {
     showBubble(`${type.palName} is now ${trimmed || type.palName}! 💛`, 2400);
   };
 
+  /* ----- daily reminder (push-notification spike) ----- */
+  const applyReminder = (on: boolean, palName: string) => {
+    remindRef.current = on;
+    setReminderOn(on);
+    AsyncStorage.setItem(REMIND_KEY, on ? '1' : '0').catch(() => {});
+    setDailyReminder(on, palName);
+  };
+  const toggleReminder = async () => {
+    if (remindRef.current) {
+      applyReminder(false, displayName);
+      showBubble('Reminders off. See you whenever! 💤', 2200);
+      return;
+    }
+    const ok = await ensureNotificationPermission();
+    if (!ok) {
+      showBubble('🔕 Turn notifications on in Settings to get pal reminders.', 3000);
+      return;
+    }
+    applyReminder(true, displayName);
+    showBubble(`🔔 ${displayName} will say hi every evening at 8!`, 2600);
+  };
+  // dev affordance: long-press the bell to fire a test notification in 10s
+  const testReminder = async () => {
+    if (!remindRef.current) {
+      showBubble('Turn reminders on first, then long-press 🔔 to test.', 2600);
+      return;
+    }
+    await fireTestNotification(displayName);
+    showBubble('🔔 Test fires in 10 seconds — watch for it!', 2600);
+  };
+
   /* ----- bond milestones ----- */
   const maybeMilestone = () => {
     const n = bondRef.current;
@@ -207,6 +249,25 @@ export default function CompanionScreen() {
 
   /* ----- persistence ----- */
   useEffect(() => {
+    initNotifications();
+    AsyncStorage.getItem(REMIND_KEY).then((v) => {
+      if (v === '1' && Platform.OS !== 'web') {
+        // re-arm the daily reminder in case the name changed since scheduling
+        AsyncStorage.getItem(NAME_KEY).then((nv) => {
+          let nm = TYPES.enfp.palName;
+          try {
+            const parsed = nv ? JSON.parse(nv) : null;
+            if (parsed && typeof parsed === 'object') setNames(parsed);
+            if (parsed && parsed[typeKey]?.trim()) nm = parsed[typeKey].trim();
+          } catch {
+            /* keep defaults */
+          }
+          setDailyReminder(true, nm);
+          remindRef.current = true;
+          setReminderOn(true);
+        });
+      }
+    });
     AsyncStorage.getItem(BOND_KEY).then((v) => {
       if (v != null) {
         const n = parseInt(v, 10) || 0;
@@ -515,6 +576,18 @@ export default function CompanionScreen() {
         </View>
         <View style={styles.headerRight}>
           <Text style={styles.clock}>{night ? '🌙' : '☀️'}</Text>
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity
+              style={styles.napBtn}
+              onPress={toggleReminder}
+              onLongPress={testReminder}
+              delayLongPress={600}
+            >
+              <Text style={styles.napBtnText}>
+                {reminderOn ? '🔔 on' : '🔕 off'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.napBtn}
             onPress={() => {
