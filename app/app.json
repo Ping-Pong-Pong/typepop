@@ -21,6 +21,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "experiments": {
+      "baseUrl": "/typepop"
+    },
     "plugins": [
       "expo-asset"
     ]
