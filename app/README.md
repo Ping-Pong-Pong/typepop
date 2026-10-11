@@ -24,8 +24,10 @@ npx expo start
 
 - Blob art lives in `assets/blobs/` (converted to PNG — iOS doesn't decode
   webp in React Native by default).
-- Per-type config in `src/types.ts`: ENFP fully wired, other 15 stubbed with
-  placeholder poses until their v5 pose sets land.
+- Per-type config in `src/types.ts`: ENFP, INTJ, ENFJ, ENTJ, ENTP, INFJ, and
+  INFP fully wired with their own pose sets and distinct voices (tap the
+  type chips on the companion screen to switch pal); the other 9 types are
+  stubbed with placeholder poses until their v5 pose sets land.
 - Animation is procedural (Reanimated springs/timings), structured so Rive
   `.riv` files can replace the procedural layer later without rewiring game
   logic.
