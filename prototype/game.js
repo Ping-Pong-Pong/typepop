@@ -1,5 +1,6 @@
 /* TypePop Pals — Phaser prototype
- * One-room idle companion demo. ENFP fox "Pip" idles, wanders, naps and chats.
+ * One-room idle companion demo. ENFP blob "Pip" idles, wanders, naps and chats.
+ * v5 blob pose set: idle / blink / happy / walk / nap.
  * Tap Pip, use the feeling check-in, watch the ambient behavior scheduler.
  */
 (function () {
@@ -38,12 +39,37 @@
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
   function rand(min, max) { return min + Math.random() * (max - min); }
 
+  // v5 blob pose set. Poses share the same 1600px canvas framing, so the body
+  // stays at a consistent scale across swaps. 'happy' is cropped to drop the
+  // ground pot; 'nap' is the wide curled-up puddle, displayed wider than tall.
+  var POSES = {
+    idle:  { key: 'pip-idle',  w: 215, h: 215 },
+    blink: { key: 'pip-blink', w: 215, h: 215 },
+    happy: { key: 'pip-happy', w: 215, h: 175 },
+    walk:  { key: 'pip-walk',  w: 215, h: 215 },
+    nap:   { key: 'pip-nap',   w: 240, h: 194 }
+  };
+
   var RoomScene = new Phaser.Class({
     Extends: Phaser.Scene,
     initialize: function RoomScene() { Phaser.Scene.call(this, { key: 'room' }); },
 
     preload: function () {
-      this.load.image('pip', 'assets/enfp-hd.png');
+      this.load.image('pip-idle', 'assets/blobs/pip-idle.webp');
+      this.load.image('pip-blink', 'assets/blobs/pip-blink.webp');
+      this.load.image('pip-happy', 'assets/blobs/pip-happy.webp');
+      this.load.image('pip-walk', 'assets/blobs/pip-walk.webp');
+      this.load.image('pip-nap', 'assets/blobs/pip-nap.webp');
+    },
+
+    // Swap Pip's pose texture; re-captures the base scale so squash
+    // tweens always work relative to the current pose's display size.
+    setPose: function (name) {
+      var p = POSES[name];
+      this.pip.setTexture(p.key).setDisplaySize(p.w, p.h);
+      this.poseSX = this.pip.scaleX;
+      this.poseSY = this.pip.scaleY;
+      this.curPose = name;
     },
 
     create: function () {
@@ -55,15 +81,15 @@
       this.drawFurniture();
       this.makeSparkTexture();
 
-      // Pip the fox
-      this.pip = this.add.image(W / 2, FLOOR_Y - 90, 'pip')
-        .setDisplaySize(190, 190)
+      // Pip the blob (v5)
+      this.pip = this.add.image(W / 2, FLOOR_Y - 90, 'pip-idle')
         .setDepth(10)
         .setInteractive({ useHandCursor: true });
+      this.setPose('idle');
       this.baseY = this.pip.y;
-      this.pipSY = this.pip.scaleY; // setDisplaySize already scaled it; squash relative to this
       this.pip.on('pointerdown', this.onTapPip, this);
       this.idleBob();
+      this.scheduleBlink();
 
       this.drawHUD();
       this.drawCheckin();
@@ -160,13 +186,30 @@
       this.showBubble(pick(ONE_LINERS), 2600);
     },
 
+    // Squash-and-stretch wobble while walking — blob-style locomotion.
+    startWalkWobble: function () {
+      this.setPose('walk');
+      this.walkWobble = this.tweens.add({
+        targets: this.pip,
+        scaleY: this.poseSY * 1.06, scaleX: this.poseSX * 0.95,
+        duration: 200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+    },
+
+    stopWalkWobble: function () {
+      if (this.walkWobble) { this.walkWobble.stop(); this.walkWobble = null; }
+      this.setPose('idle');
+    },
+
     behaviorWander: function () {
       var self = this;
       this.busy = true;
       var targetX = rand(90, W - 90);
+      this.startWalkWobble();
       this.tweens.add({
         targets: this.pip, x: targetX, duration: 1100, ease: 'Sine.easeInOut',
         onComplete: function () {
+          self.stopWalkWobble();
           self.hop(1);
           self.busy = false;
         }
@@ -178,9 +221,11 @@
       this.busy = true;
       var tx = spot === 'couch' ? this.couchX + 90 : this.plantX - 80;
       var label = spot === 'couch' ? 'Couch: claimed. Obviously.' : 'Sniffing the plant. For science.';
+      this.startWalkWobble();
       this.tweens.add({
         targets: this.pip, x: tx, duration: 1300, ease: 'Sine.easeInOut',
         onComplete: function () {
+          self.stopWalkWobble();
           self.showBubble(label, 2200);
           self.hop(2);
           self.time.delayedCall(1200, function () { self.busy = false; });
@@ -203,7 +248,17 @@
       var self = this;
       this.busy = true;
       this.showBubble('Just… five more minutes…', 2000);
-      this.tweens.add({ targets: this.pip, scaleY: this.pipSY * 0.86, duration: 600 });
+      // melt into the nap pose (wide curled-up puddle), then breathe
+      this.setPose('nap');
+      this.tweens.add({
+        targets: this.pip, scaleY: this.poseSY * 0.94, duration: 500, ease: 'Sine.easeOut',
+        onComplete: function () {
+          self.napBreath = self.tweens.add({
+            targets: self.pip, scaleY: self.poseSY * 0.985,
+            duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+          });
+        }
+      });
       var zzz = [];
       for (var i = 0; i < 3; i++) {
         (function (k) {
@@ -219,7 +274,13 @@
         })(i);
       }
       this.time.delayedCall(3600, function () {
-        self.tweens.add({ targets: self.pip, scaleY: self.pipSY, duration: 400 });
+        // wake up: pop back to idle with a little stretch
+        if (self.napBreath) { self.napBreath.stop(); self.napBreath = null; }
+        self.setPose('idle');
+        self.tweens.add({
+          targets: self.pip, scaleY: self.poseSY * 1.08,
+          duration: 200, yoyo: true, ease: 'Sine.easeOut'
+        });
         self.hop(1);
         self.busy = false;
       });
@@ -232,6 +293,21 @@
       this.tweens.add({
         targets: this.pip, y: this.baseY - 12, duration: 1100,
         yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      });
+    },
+
+    // Periodic blink while idling — swaps to the blink frame for ~150ms.
+    // Skipped whenever Pip is busy or not in the idle pose.
+    scheduleBlink: function () {
+      var self = this;
+      this.time.delayedCall(rand(2600, 5200), function () {
+        if (!self.busy && self.curPose === 'idle') {
+          self.setPose('blink');
+          self.time.delayedCall(150, function () {
+            if (!self.busy && self.curPose === 'blink') self.setPose('idle');
+          });
+        }
+        self.scheduleBlink();
       });
     },
 
@@ -249,13 +325,18 @@
 
     onTapPip: function () {
       if (this.busy) return;
+      var self = this;
       this.bond += 1;
       this.updateBond();
+      this.setPose('happy');
       this.hop(1);
       this.sparks.explode(12, this.pip.x, this.pip.y - 80);
       this.showBubble(pick(ONE_LINERS), 2400);
+      // back to idle once the hop lands (guarded: a behavior may have started)
+      this.time.delayedCall(600, function () {
+        if (!self.busy && self.curPose === 'happy') self.setPose('idle');
+      });
       if (this.bond === 5) {
-        var self = this;
         this.time.delayedCall(2600, function () {
           self.showBubble('Pip likes you! Bond level up! 💛', 2600);
         });
@@ -293,10 +374,19 @@
 
     /* ---------- HUD & check-in ---------- */
     drawHUD: function () {
+      var self = this;
       this.add.text(16, 14, '🎭 TypePop Pals', { fontSize: '20px', fontStyle: 'bold', color: '#2B2B3A', fontFamily: 'Poppins, sans-serif' });
       this.bondText = this.add.text(16, 44, '', { fontSize: '16px', color: '#6B6B80', fontFamily: 'Poppins, sans-serif' });
       this.updateBond();
       this.clockText = this.add.text(W - 16, 14, '', { fontSize: '20px' }).setOrigin(1, 0);
+      // Nap test button (for trying the sleep pose on demand)
+      var napBtn = this.add.text(W - 16, 46, '😴 nap', {
+        fontSize: '15px', color: '#6B6B80', fontFamily: 'Poppins, sans-serif',
+        backgroundColor: '#FFF8F0', padding: { x: 10, y: 6 }
+      }).setOrigin(1, 0).setDepth(6).setInteractive({ useHandCursor: true });
+      napBtn.on('pointerdown', function () { if (!self.busy) self.behaviorNap(); });
+      napBtn.on('pointerover', function () { napBtn.setColor('#2B2B3A'); });
+      napBtn.on('pointerout', function () { napBtn.setColor('#6B6B80'); });
     },
 
     updateBond: function () {
@@ -338,11 +428,16 @@
 
     onCheckin: function (moodKey) {
       if (this.busy) return;
+      var self = this;
       this.bond += 1;
       this.updateBond();
+      this.setPose('happy');
       this.hop(2);
       this.sparks.explode(14, this.pip.x, this.pip.y - 80);
       this.showBubble(pick(CHECKIN_REACT[moodKey]), 2800);
+      this.time.delayedCall(1100, function () {
+        if (!self.busy && self.curPose === 'happy') self.setPose('idle');
+      });
     }
   });
 
