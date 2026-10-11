@@ -16,6 +16,8 @@ import {
   ScrollView,
   StyleSheet,
   Dimensions,
+  Modal,
+  TextInput,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -43,6 +45,9 @@ import {
 const { width: W, height: H } = Dimensions.get('window');
 const BOND_KEY = 'typepop.bond.v1';
 const TYPE_KEY = 'typepop.type.v1';
+const NAME_KEY = 'typepop.names.v1';
+// bond thresholds that trigger a little celebration
+const MILESTONES = [5, 10, 25, 50, 100];
 
 const POSE_SIZE: Record<PoseName, [number, number]> = {
   idle: [215, 215],
@@ -140,6 +145,11 @@ export default function CompanionScreen() {
   const [night, setNight] = useState(isNightNow());
   const [napping, setNapping] = useState(false);
   const [sparks, setSparks] = useState<{ id: number }[]>([]);
+  // custom pal names, keyed by type key; fall back to types.ts palName
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [nameModal, setNameModal] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const displayName = names[typeKey]?.trim() || type.palName;
 
   const poseRef = useRef<PoseName>('idle');
   const busyRef = useRef(false);
@@ -166,7 +176,33 @@ export default function CompanionScreen() {
     setTypeKey(key);
     AsyncStorage.setItem(TYPE_KEY, key).catch(() => {});
     setPose('idle');
-    showBubble(`Say hi to ${TYPES[key].palName}!`, 2000);
+    const nm = names[key]?.trim() || TYPES[key].palName;
+    showBubble(`Say hi to ${nm}!`, 2000);
+  };
+
+  /* ----- name your pal ----- */
+  const openRename = () => {
+    setNameDraft(displayName);
+    setNameModal(true);
+  };
+  const saveName = () => {
+    const trimmed = nameDraft.trim().slice(0, 16);
+    const next = { ...names, [typeKey]: trimmed || type.palName };
+    setNames(next);
+    setNameModal(false);
+    AsyncStorage.setItem(NAME_KEY, JSON.stringify(next)).catch(() => {});
+    showBubble(`${type.palName} is now ${trimmed || type.palName}! 💛`, 2400);
+  };
+
+  /* ----- bond milestones ----- */
+  const maybeMilestone = () => {
+    const n = bondRef.current;
+    if (!MILESTONES.includes(n)) return;
+    const nm = displayName;
+    setTimeout(() => {
+      spawnSparks(24);
+      showBubble(`🎉 Bond ${n}! ${nm} ADORES you!`, 3000);
+    }, 2600);
   };
 
   /* ----- persistence ----- */
@@ -180,6 +216,16 @@ export default function CompanionScreen() {
     });
     AsyncStorage.getItem(TYPE_KEY).then((v) => {
       if (v && TYPES[v]) setTypeKey(v);
+    });
+    AsyncStorage.getItem(NAME_KEY).then((v) => {
+      if (v) {
+        try {
+          const parsed = JSON.parse(v);
+          if (parsed && typeof parsed === 'object') setNames(parsed);
+        } catch {
+          /* keep defaults */
+        }
+      }
     });
   }, []);
   const bumpBond = () => {
@@ -381,12 +427,7 @@ export default function CompanionScreen() {
     setTimeout(() => {
       if (!busyRef.current && poseRef.current === 'happy') setPose('idle');
     }, 700);
-    if (bondRef.current === 5) {
-      setTimeout(
-        () => showBubble(`${type.palName} likes you! Bond level up! 💛`, 2600),
-        2600,
-      );
-    }
+    maybeMilestone();
   };
 
   const onCheckin = (mood: MoodKey) => {
@@ -400,6 +441,7 @@ export default function CompanionScreen() {
     setTimeout(() => {
       if (!busyRef.current && poseRef.current === 'happy') setPose('idle');
     }, 1200);
+    maybeMilestone();
   };
 
   /* ----- animated styles ----- */
@@ -462,9 +504,14 @@ export default function CompanionScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>🎭 TypePop Pals</Text>
-          <Text style={styles.bond}>
-            {hearts}  {type.palName} · {type.name}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.bond}>
+              {hearts}  {displayName} · {type.name}
+            </Text>
+            <TouchableOpacity onPress={openRename} style={styles.renameBtn}>
+              <Text style={styles.renameText}>✏️</Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.headerRight}>
           <Text style={styles.clock}>{night ? '🌙' : '☀️'}</Text>
@@ -563,6 +610,44 @@ export default function CompanionScreen() {
           ))}
         </View>
       </View>
+
+      {/* rename modal */}
+      <Modal
+        visible={nameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNameModal(false)}
+      >
+        <View style={styles.modalShade}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              Name your {type.name} pal 💛
+            </Text>
+            <TextInput
+              style={styles.nameInput}
+              value={nameDraft}
+              onChangeText={setNameDraft}
+              maxLength={16}
+              autoFocus
+              placeholder={type.palName}
+              placeholderTextColor="#B8A88F"
+              returnKeyType="done"
+              onSubmitEditing={saveName}
+            />
+            <View style={styles.modalRow}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setNameModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSave} onPress={saveName}>
+                <Text style={styles.modalSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -723,6 +808,9 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 20, fontWeight: 'bold', color: '#2B2B3A' },
   bond: { fontSize: 16, color: '#6B6B80', marginTop: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center' },
+  renameBtn: { marginLeft: 6, padding: 4 },
+  renameText: { fontSize: 15 },
   headerRight: { alignItems: 'flex-end' },
   clock: { fontSize: 20 },
   typeRow: {
@@ -843,4 +931,57 @@ const styles = StyleSheet.create({
   moodBtn: { alignItems: 'center', width: 70 },
   moodIcon: { fontSize: 30 },
   moodLabel: { fontSize: 12, color: '#6B6B80', marginTop: 2 },
+  modalShade: {
+    flex: 1,
+    backgroundColor: 'rgba(43,43,58,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFDF8',
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: '#F0E6D8',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2B2B3A',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  nameInput: {
+    borderWidth: 2,
+    borderColor: '#E8D9C0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 18,
+    color: '#2B2B3A',
+    backgroundColor: '#FFF',
+    textAlign: 'center',
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 14,
+  },
+  modalCancel: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  modalCancelText: { fontSize: 16, color: '#6B6B80' },
+  modalSave: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#FF6B6B',
+  },
+  modalSaveText: { fontSize: 16, fontWeight: 'bold', color: '#FFF' },
 });
