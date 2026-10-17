@@ -21,6 +21,14 @@ const ASSETS = './assets/';
 const lerp = (a, b, k) => a + (b - a) * k;
 
 /* ================================================================ boot */
+// surface runtime errors on-screen so a phone failure is diagnosable
+window.addEventListener('error', (e) => {
+  const el = document.getElementById('errtoast');
+  if (el) {
+    el.style.display = 'block';
+    el.textContent = 'Error: ' + (e.message || (e.error && e.error.message) || 'unknown');
+  }
+});
 const host = document.getElementById('app');
 const loaderEl = document.getElementById('loader');
 const uiEl = document.getElementById('ui');
@@ -350,8 +358,11 @@ function burst(x, y, z, n, spread = 1.7, up = 2.4) {
 }
 
 /* ================================================================ post chain */
+// NOTE: samples must stay 0 — a multisampled half-float render target
+// renders pure black on iOS Safari (first deploy used samples:4 and the
+// whole scene was black on iPhone, 2026-10-17).
 const rt = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, {
-  samples: 4, type: THREE.HalfFloatType,
+  samples: 0, type: THREE.HalfFloatType,
 });
 const composer = new EffectComposer(renderer, rt);
 composer.setPixelRatio(PIXEL_RATIO);
@@ -559,6 +570,9 @@ function updateSparks(dt) {
 
 function animate() {
   requestAnimationFrame(animate);
+  window.__hd2d_booted = true;
+  const toast = document.getElementById('errtoast');
+  if (toast && toast.dataset.watchdog) { toast.style.display = 'none'; }
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
 
