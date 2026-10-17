@@ -62,6 +62,11 @@
 
   #fallback{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
     text-align:center;padding:32px;background:#171009}
+
+  /* ---------- error toast (diagnostics on phone) ---------- */
+  #errtoast{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:60;
+    display:none;background:rgba(120,20,20,.92);color:#fff;font-size:12px;line-height:1.45;
+    padding:10px 12px;border-radius:10px;word-break:break-word}
 </style>
 <script type="importmap">
 {
@@ -93,7 +98,20 @@
 </div>
 
 <div id="fallback"><p>This demo needs WebGL.<br>Please open it in a recent Chrome, Safari or Edge.</p></div>
+<div id="errtoast"></div>
+<script>
+/* boot watchdog: if the 3D module never starts (e.g. CDN blocked),
+   say so instead of sitting on a black screen forever */
+setTimeout(function () {
+  if (!window.__hd2d_booted) {
+    var t = document.getElementById('errtoast');
+    t.style.display = 'block';
+    t.dataset.watchdog = '1';
+    t.textContent = 'Still loading after 12s — the 3D library (jsdelivr CDN) may be blocked on this network.';
+  }
+}, 12000);
+</script>
 
-<script type="module" src="./js/main.js"></script>
+<script type="module" src="./js/main.js?v=2"></script>
 </body>
 </html>
